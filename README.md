@@ -1,2 +1,2 @@
-# Doppler-Speed-Radar-repo
+# Doppler-speed-radar-repo
 Doppler Speed Radar Project Repo
