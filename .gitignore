@@ -1,0 +1,13 @@
+.settings/
+# STM32CubeIDE
+Debug/
+
+# Log files
+*.log
+
+# Applications
+*.app
+*.exe
+*.war
+*.launch
+*.ld
