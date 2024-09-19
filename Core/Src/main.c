@@ -20,11 +20,14 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include <main.h>
-#include <ADC.h>
+#include <comparator.h>  // user defined heads       include comparator header file
 #include "usb_host.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+/*
+ * Vref = 1.22V
+ */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,6 +37,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,6 +47,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+ADC_HandleTypeDef hadc2;
 COMP_HandleTypeDef hcomp1;
 DAC_HandleTypeDef hdac1;
 I2C_HandleTypeDef hi2c1;
@@ -52,13 +57,15 @@ QSPI_HandleTypeDef hqspi;
 SAI_HandleTypeDef hsai_BlockA1;
 SAI_HandleTypeDef hsai_BlockB1;
 SPI_HandleTypeDef hspi2;
-TIM_HandleTypeDef htim6;
+TIM_HandleTypeDef htim6;   // we are using htim6 as timer to count waves and calculate frequency
+TIM_HandleTypeDef htim7;
 UART_HandleTypeDef huart2;
-
-
-
 /* USER CODE BEGIN PV */
-
+//float frequency = 0.00;       // stores the frequency as floating value
+//float speed_mph = 0.00;		  // stores the speed in mile per hour
+//float speed_kmph = 0.00;	// stores the  speed in km per hour
+//float speed_mps = 0.00;     // stores the speed in meter per hour
+//long long unsigned int squarewave_count = 0;   // global variable, this variable counts the number of waveforms in a second
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,20 +82,26 @@ static void MX_ADC1_Init(void);
 static void MX_COMP1_Init(void);
 static void MX_DAC1_Init(void);
 static void MX_TIM6_Init(void);
+static void MX_TIM7_Init(void);
+static void MX_ADC2_Init(void);
 void MX_USB_HOST_Process(void);
 
 /* USER CODE BEGIN PFP */
 
+float frequency = 0.00;       // stores the frequency as floating value
+float speed_mph = 0.00;		  // stores the speed in mile per hour
+float speed_kmph = 0.00;	// stores the  speed in km per hour
+float speed_mps = 0.00;     // stores the speed in meter per hour
+long long unsigned int squarewave_count = 0;   // global variable, this variable counts the number of waveforms in a second
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/***
- *Global Variables are all stored in ADC.h header file
- *
- ***/
 
+/***
+ * User defined global variable is in comparator.h header file.
+***/
 
 /* USER CODE END 0 */
 
@@ -105,7 +118,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+  HAL_Init();   // Initialise HAL GPIO
 
   /* USER CODE BEGIN Init */
 
@@ -128,15 +141,18 @@ int main(void)
   MX_SPI2_Init();
   MX_USART2_UART_Init();
   MX_USB_HOST_Init();
-  MX_ADC1_Init(); // start ADC 1
-  MX_COMP1_Init();
+  MX_ADC1_Init();
+  MX_COMP1_Init();    // initialise Comparator input pin 1 (PB2) to receive analogue input
   MX_DAC1_Init();
   MX_TIM6_Init();
+  MX_TIM7_Init();
+  MX_ADC2_Init();
   /* USER CODE BEGIN 2 */
-//  HAL_COMP_Start(&hcomp1);  // start the comparator 1
-  lcd_initialize();
-  ADCTask_initialize();   // initialise timer 16, more detailed can be seen in header file ADC.h
 
+
+  lcd_initialize("Task 4"); // initialise the LCD display task number
+  comparator_initialize();
+  timer_initialize();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -145,8 +161,13 @@ int main(void)
   {
     /* USER CODE END WHILE */
     MX_USB_HOST_Process();
-//    DO nothing here. ADC is samplied in timer interrupt at the very bottom part of the code.
-//    The timer gets called 5000 times per second, so ADC data is samplied and calculated at 5000 Hz.
+    /**
+     it is very important to note that the frequency and speed is not calculated here in while loop, it is done in a set frequency in timer interrupt call-back function down below the code
+     Comparator input is triggered in a call back function as well.
+     What is main loop is purely to display the measured samples.
+     **/
+    display_serial_monitor(frequency, speed_kmph,  speed_mps,  speed_mph);
+    display_LCD(speed_kmph);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -281,7 +302,7 @@ static void MX_ADC1_Init(void)
   }
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_7;
+  sConfig.Channel = ADC_CHANNEL_16;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
@@ -294,6 +315,62 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief ADC2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC2_Init(void)
+{
+
+  /* USER CODE BEGIN ADC2_Init 0 */
+
+  /* USER CODE END ADC2_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC2_Init 1 */
+
+  /* USER CODE END ADC2_Init 1 */
+  /** Common config
+  */
+  hadc2.Instance = ADC2;
+  hadc2.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc2.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc2.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc2.Init.LowPowerAutoWait = DISABLE;
+  hadc2.Init.ContinuousConvMode = DISABLE;
+  hadc2.Init.NbrOfConversion = 1;
+  hadc2.Init.DiscontinuousConvMode = DISABLE;
+  hadc2.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc2.Init.DMAContinuousRequests = DISABLE;
+  hadc2.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc2.Init.OversamplingMode = DISABLE;
+  if (HAL_ADC_Init(&hadc2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_7;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC2_Init 2 */
+
+  /* USER CODE END ADC2_Init 2 */
 
 }
 
@@ -668,9 +745,9 @@ static void MX_TIM6_Init(void)
 
   /* USER CODE END TIM6_Init 1 */
   htim6.Instance = TIM6;
-  htim6.Init.Prescaler = 20-1;
+  htim6.Init.Prescaler = 2000-1;
   htim6.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim6.Init.Period = 200-1;
+  htim6.Init.Period = 10000-1;
   htim6.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim6) != HAL_OK)
   {
@@ -685,6 +762,44 @@ static void MX_TIM6_Init(void)
   /* USER CODE BEGIN TIM6_Init 2 */
 
   /* USER CODE END TIM6_Init 2 */
+
+}
+
+/**
+  * @brief TIM7 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM7_Init(void)
+{
+
+  /* USER CODE BEGIN TIM7_Init 0 */
+
+  /* USER CODE END TIM7_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM7_Init 1 */
+
+  /* USER CODE END TIM7_Init 1 */
+  htim7.Instance = TIM7;
+  htim7.Init.Prescaler = 20-1;
+  htim7.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim7.Init.Period = 65536-1;
+  htim7.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim7) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim7, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM7_Init 2 */
+
+  /* USER CODE END TIM7_Init 2 */
 
 }
 
@@ -845,15 +960,14 @@ static void MX_GPIO_Init(void)
 void HAL_COMP_TriggerCallback(COMP_HandleTypeDef *hcomp){     // comparator input callback function. Once triggered, it will toggle LED and count the waveform
 
 	HAL_GPIO_TogglePin(Green_LED_GPIO_Port, Green_LED_Pin);
+	squarewave_count++;   // count square wave once comparator input is above reference voltage
+
 }
 
 
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){          // called by timer7 for every 1 second and in this time window, calculate the frequency and speeds
-
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){          // called by timer6 for every 1 second and in this time window, calculate the frequency and speeds
 	if(htim == &htim6){
-	ADCread();   // read ADC raw data
-	CalculateVoltage();  // convert raw data into voltage
-	TransmitData();   // transmit the samplied voltage value to Arduino Serial plotter at 5000 Hz.
+		compute_speeds(&squarewave_count, &frequency, &speed_kmph, &speed_mps, &speed_mph);
 	}
 }
 /* USER CODE END 4 */
