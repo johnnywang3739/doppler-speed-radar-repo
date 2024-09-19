@@ -20,8 +20,8 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include <main.h>
 #include "usbh_core.h"
+#include "main.h"
 #include "usbh_platform.h"
 
 /* USER CODE BEGIN Includes */
